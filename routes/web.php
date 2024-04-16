@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -14,5 +15,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', function () {
-    return view('welcome');
+    $user = \App\Models\User::first();
+//    return \Illuminate\Support\Facades\Auth::guard('api')->createToken($user)->access_token;
+    return \Illuminate\Support\Facades\Auth::guard('api')->user();
 });
