@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('user_id')->constrained();
             $table->string('name')->default('default');
-            $table->boolean('revoked')->default(null);
+            $table->boolean('revoked')->default(null)->nullable();
             $table->timestamps();
         });
     }
