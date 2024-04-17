@@ -124,6 +124,6 @@ class AuthController extends Controller
             'code' => $status_code,
             'message' => $message,
             'data' => $data
-        ]);
+        ])->setStatusCode($status_code);
     }
 }

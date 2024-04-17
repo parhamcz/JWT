@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('/auth')->name('auth.')->group(function () {
+    Route::get('register', [AuthController::class, 'register'])->name('register')->middleware('auth:api');
     Route::get('login', [AuthController::class, 'login'])->name('login');
     Route::get('logout', [AuthController::class, 'logout'])->name('logout');
     Route::get('refresh-token', [AuthController::class, 'refreshAccessToken'])->name('refresh-token');

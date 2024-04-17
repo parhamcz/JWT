@@ -104,7 +104,7 @@ class JWTGuard implements Guard
             sub: $user->id,
             type: 'access_token',
             sig: $token->uuid,
-            exp: time() + config('jwt.expiration'),
+            exp: Carbon::parse(time() + config('jwt.expiration')),
         );
         $this->access_token = $this->accessTokenEncrypter->encrypt($payload);
         $this->tokens['access_token'] = $this->access_token;
@@ -123,7 +123,7 @@ class JWTGuard implements Guard
             sub: $user->id,
             type: 'refresh_token',
             sig: $refresh_token->uuid,
-            exp: time() + config('jwt.refresh_token_expiration'),
+            exp: Carbon::parse(time() + config('jwt.refresh_token_expiration')),
         );
         $this->refresh_token = $this->refreshTokenEncrypter->encrypt($payload);
         $this->tokens['refresh_token'] = $this->refresh_token;
