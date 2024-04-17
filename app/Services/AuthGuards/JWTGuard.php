@@ -18,26 +18,18 @@ class JWTGuard implements Guard
 
     protected $request;
     private $data;
-    private Encrypter $encrypter;
     private string $access_token;
     private string $refresh_token;
-
-//    public function __set($key, $value)
-//    {
-//        $this->data[$key] = $value;
-//    }
-//
-//    public function __get($key)
-//    {
-//        return $this->data[$key] ?? null;
-//    }
     public array $tokens;
+    private Encrypter $accessTokenEncrypter;
+    private Encrypter $refreshTokenEncrypter;
 
     public function __construct(UserProvider $provider, Request $request)
     {
         $this->provider = $provider;
         $this->request = $request;
-        $this->encrypter = new Encrypter(config('jwt.private_key'), 'aes-256-cbc');
+        $this->accessTokenEncrypter = new Encrypter(config('jwt.private_key'), 'aes-256-cbc');
+        $this->refreshTokenEncrypter = new Encrypter(config('jwt.refresh_private_key'), 'aes-256-cbc');
         $this->access_token = $this->getToken() ?? '';
         $this->refresh_token = $this->getToken() ?? '';
         $this->tokens = [
@@ -86,17 +78,14 @@ class JWTGuard implements Guard
     public function refreshAccessToken(): bool|static
     {
         $refresh_token = $this->getToken();
-        $data = $this->encrypter->decrypt($refresh_token);
+        $data = $this->refreshTokenDecrypt($refresh_token);
         if (
-            isset($data['sub'])
-            && $data
-            && $data['type'] === 'refresh_token'
-            && Carbon::parse($data['exp']) > now()
+            $this->isDataValid($data)
         ) {
             $user = User::find($data['sub']);
             if ($user) {
                 $this->revokeAccessToken();
-                $this->createToken($user,'Renewed Access token');
+                $this->createToken($user, 'Renewed Access token');
                 return $this;
             }
         }
@@ -106,18 +95,18 @@ class JWTGuard implements Guard
     public function createToken($user, $name = 'default'): static
     {
         $this->revokeAccessToken();
-        $payload = [
-            'sub' => $user->id,
-            'type' => 'access_token',
-            'sig' => config('jwt.private_key') . 'JWT' . config('jwt.expiration'),
-            'exp' => time() + config('jwt.expiration'),
-        ];
-        JWT::create([
+        $token = JWT::create([
             'name' => $name,
             'user_id' => $user->id,
             'revoked' => null
         ]);
-        $this->access_token = $this->encrypter->encrypt($payload);
+        $payload = $this->buildPayload(
+            sub: $user->id,
+            type: 'access_token',
+            sig: $token->uuid,
+            exp: time() + config('jwt.expiration'),
+        );
+        $this->access_token = $this->accessTokenEncrypter->encrypt($payload);
         $this->tokens['access_token'] = $this->access_token;
         $this->user = $user;
         $this->firstOrCreateRefreshToken($user);
@@ -126,28 +115,33 @@ class JWTGuard implements Guard
 
     protected function firstOrCreateRefreshToken($user): static
     {
-        $payload = [
-            'sub' => $user->id,
-            'type' => 'refresh_token',
-            'sig' => config('jwt.refresh_private_key') . 'JWT' . config('jwt.refresh_token_expiration'),
-            'exp' => time() + config('jwt.refresh_token_expiration'),
-        ];
-        RefreshToken::firstOrCreate([
+        $refresh_token = RefreshToken::firstOrCreate([
             'user_id' => $user->id,
             'revoked' => null
         ]);
-        $this->refresh_token = $this->encrypter->encrypt($payload);
+        $payload = $this->buildPayload(
+            sub: $user->id,
+            type: 'refresh_token',
+            sig: $refresh_token->uuid,
+            exp: time() + config('jwt.refresh_token_expiration'),
+        );
+        $this->refresh_token = $this->refreshTokenEncrypter->encrypt($payload);
         $this->tokens['refresh_token'] = $this->refresh_token;
         return $this;
     }
 
     public function check(): bool
     {
-        $data = $this->decrypt($this->getToken());
+        return $this->isDataValid($this->accessTokenDecrypt($this->getToken()));
+    }
+
+    protected function isDataValid(array $data, string $type = 'access_token'): bool
+    {
         if (
             isset($data['sub'])
-            && $this->getValidJwt($data['sub'])
-            && $data['type'] === 'access_token'
+            && $this->getUserValidJwt($data['sub'])
+            && $data['type'] === $type
+            && JWT::find($data['sig'])->whereRevoked(null)->first()
             && Carbon::parse($data['exp']) > now()
         ) {
             return true;
@@ -155,21 +149,26 @@ class JWTGuard implements Guard
         return false;
     }
 
-    protected function getValidJwt($user_id): ?JWT
+    protected function getUserValidJwt($user_id): ?JWT
     {
         return JWT::where('user_id', $user_id)->whereRevoked(null)->first();
     }
 
+    protected function buildPayload(int $sub, string $type, string $sig, Carbon $exp): array
+    {
+        return [
+            'sub' => $sub,
+            'type' => $type,
+            'sig' => $sig,
+            'exp' => $exp
+        ];
+    }
+
     protected function retrieveUserByToken($token)
     {
-        $data = $this->decrypt($token);
-        $valid_token = $this->getValidJwt($data['sub']);
-        if (
-            isset($data['sub'])
-            && $valid_token
-            && $data['type'] === 'access_token'
-            && Carbon::parse($data['exp']) > now()
-        ) {
+        $data = $this->accessTokenDecrypt($token);
+        $valid_token = $this->getUserValidJwt($data['sub']);
+        if ($this->isDataValid($data)) {
             return $valid_token->user ?? null;
         }
         return null;
@@ -185,7 +184,7 @@ class JWTGuard implements Guard
 
     protected function revokeRefreshToken(): bool
     {
-        $data = $this->decrypt($this->access_token);
+        $data = $this->refreshTokenDecrypt($this->access_token);
         $refresh_token = RefreshToken::where('user_id', $data['sub'])->whereRevoked(null)->first();
         if ($refresh_token) {
             $refresh_token->revoked = 1;
@@ -198,8 +197,8 @@ class JWTGuard implements Guard
     protected function revokeAccessToken(): bool
     {
         if ($this->access_token) {
-            $data = $this->decrypt($this->access_token);
-            $access_token = JWT::where('user_id', $data['sub'])->whereRevoked(null)->first();
+            $data = $this->accessTokenDecrypt($this->access_token);
+            $access_token = $this->getUserValidJwt($data['sub']);
             if ($access_token) {
                 $access_token->revoked = 1;
             } else {
@@ -210,9 +209,14 @@ class JWTGuard implements Guard
         return false;
     }
 
-    protected function decrypt($token)
+    protected function refreshTokenDecrypt($token)
     {
-        return $this->encrypter->decrypt($token);
+        return $this->refreshTokenEncrypter->decrypt($token);
+    }
+
+    protected function accessTokenDecrypt($token)
+    {
+        return $this->accessTokenEncrypter->decrypt($token);
     }
 
     protected function forgetUser(): void
