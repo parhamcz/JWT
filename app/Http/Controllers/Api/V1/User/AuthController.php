@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\User;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
+use App\Models\JWT;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -22,7 +23,13 @@ class AuthController extends Controller
                 'password' => $request->password,
             ]);
             $tokens = Auth::guard('api')->createToken($user, 'Access Token')->tokens;
-
+            if (!$tokens) {
+                return $this->generateResponse(
+                    message: "Token not found.",
+                    success: false,
+                    status_code: 400
+                );
+            }
             return $this->generateResponse(
                 message: "User Registered successfully.",
                 status_code: 201,
@@ -68,19 +75,39 @@ class AuthController extends Controller
 
     }
 
+    public function getUser()
+    {
+        $user = Auth::guard('api')->user();
+        if ($user) {
+            return $this->generateResponse(
+                message: "User Were Fetched Successfully.",
+                data: $user
+            );
+        }
+        return $this->generateResponse(
+            message: "User Not found.",
+            success: false,
+            status_code: 400
+        );
+
+    }
+
     public function logout()
     {
         try {
-            if (Auth::guard('api')->revoke()) {
+            $user = Auth::guard('api')->user();
+            if ($user) {
+                if (Auth::guard('api')->revoke($user)) {
+                    return $this->generateResponse(
+                        message: "User Logged Out Successfully."
+                    );
+                }
                 return $this->generateResponse(
-                    message: "User Logged Out Successfully."
+                    message: "User Token Not Found.",
+                    success: false,
+                    status_code: 400
                 );
             }
-            return $this->generateResponse(
-                message: "User Token Not Found.",
-                success: false,
-                status_code: 400
-            );
         } catch (\Exception $e) {
             return $this->generateResponse(
                 message: "Error in logging out the user. Error: " . $e->getMessage(),

@@ -24,7 +24,7 @@ return [
     | This key must be 32 chars long due to encryption algorithm.
     |
     */
-    'refresh_private_key' => 'your-32-chars-private-key-123123',
+    'refresh_private_key' => 'your-32-chars-private-key-234234',
     /*
     |--------------------------------------------------------------------------
     | Token Expiration
