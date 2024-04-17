@@ -9,7 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class RefreshToken extends Model
 {
     protected $table = 'refresh_tokens';
-    protected $fillable = ['user_id', 'name', 'revoked'];
+    protected $fillable = ['uuid', 'user_id', 'name', 'revoked'];
+    protected $primaryKey = 'uuid';
 
     public function user(): BelongsTo
     {

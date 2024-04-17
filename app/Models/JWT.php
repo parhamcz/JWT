@@ -10,7 +10,9 @@ class JWT extends Model
 {
 
     protected $table = 'personal_access_tokens';
-    protected $fillable = ['id', 'user_id', 'revoked', 'name'];
+    protected $fillable = ['uuid', 'user_id', 'revoked', 'name'];
+
+    protected $primaryKey = 'uuid';
 
     public function user(): BelongsTo
     {
