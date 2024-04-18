@@ -43,49 +43,29 @@ class JWTGuard implements Guard
     }
 
 
-    public function refreshAccessToken()//: static
+    /**
+     * @throws JWTException
+     */
+    public function refreshAccessToken(): static
     {
         try {
             $this->validateRefreshToken();
             $this->revokeAccessToken($this->user);
             $this->createToken($this->user, 'Refreshed Access Token');
         } catch (JWTException $e) {
-            return $e->getMessage();
-//            throw new JWTException($e->getMessage());
+            throw new JWTException($e->getMessage());
         }
         return $this;
     }
 
 
-    public function createToken2($user, $name = 'default'): static
-    {
-        $uuid = Str::uuid();
-        $this->revokeAccessToken($user);
-        JWT::create([
-            'name' => $name,
-            'uuid' => $uuid,
-            'user_id' => $user->id,
-            'revoked' => null
-        ]);
-        $payload = $this->buildPayload(
-            sub: $user->id,
-            type: 'access_token',
-            sig: $uuid,
-            exp: Carbon::parse(time() + config('jwt.expiration')),
-        );
-        $this->access_token = $this->accessTokenEncrypter->encrypt($payload);
-        $this->tokens['access_token'] = $this->access_token;
-        $this->user = $user;
-        $this->createRefreshToken($user);
-        return $this;
-    }
 
     public function createToken(User $user, string $name = 'default'): static
     {
         $this->revokeExistingTokens($user);
 
         $uuid = Str::uuid();
-        $jwt = JWT::create([
+        JWT::create([
             'name' => $name,
             'uuid' => $uuid,
             'user_id' => $user->id,
@@ -108,7 +88,7 @@ class JWTGuard implements Guard
     protected function createRefreshToken(User $user): void
     {
         $uuid = Str::uuid();
-        $refreshToken = RefreshToken::create([
+        RefreshToken::create([
             'user_id' => $user->id,
             'revoked' => null,
             'uuid' => $uuid,
@@ -133,9 +113,6 @@ class JWTGuard implements Guard
         }
     }
 
-    /**
-     * @throws JWTException
-     */
     protected function validateAccessToken(): void
     {
         $data = $this->accessTokenDecrypt($this->getToken());
@@ -145,7 +122,7 @@ class JWTGuard implements Guard
     /**
      * @throws JWTException
      */
-    protected function validateRefreshToken()//: void
+    protected function validateRefreshToken(): void
     {
 
         $data = $this->refreshTokenDecrypt($this->getToken());
@@ -218,17 +195,11 @@ class JWTGuard implements Guard
         return null;
     }
 
-    /**
-     * @throws JWTException
-     */
     protected function retrieveUserByToken(string $token): ?User
     {
         return $this->retrieveUserByAccessToken($token) ?? $this->retrieveUserByRefreshToken($token);
     }
 
-    /**
-     * @throws JWTException
-     */
     protected function retrieveUserByAccessToken(string $token): ?User
     {
         $data = $this->accessTokenDecrypt($token);
@@ -238,9 +209,6 @@ class JWTGuard implements Guard
         return null;
     }
 
-    /**
-     * @throws JWTException
-     */
     protected function retrieveUserByRefreshToken(string $token): ?User
     {
         $data = $this->refreshTokenDecrypt($token);
@@ -285,10 +253,6 @@ class JWTGuard implements Guard
             }
         }
     }
-
-    /**
-     * @throws JWTException
-     */
     protected function accessTokenDecrypt(string $token): ?array
     {
         try {
@@ -299,9 +263,6 @@ class JWTGuard implements Guard
         }
     }
 
-    /**
-     * @throws JWTException
-     */
     protected function refreshTokenDecrypt(string $token): ?array
     {
         try {
