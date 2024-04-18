@@ -25,7 +25,13 @@ class AuthServiceProvider extends ServiceProvider
     {
         //
         Auth::extend('jwt', function ($app, $name, array $config) {
-            return new JWTGuard(Auth::createUserProvider($config['provider']), $app->make('request'));
+            $accessTokenEncrypter = $app->make('encrypter');
+            return new JWTGuard(
+                Auth::createUserProvider($config['provider']),
+                $accessTokenEncrypter,
+                $accessTokenEncrypter,  // Use the same encrypter for refresh tokens (optional)
+                $app->make('request')
+            );
         });
     }
 }

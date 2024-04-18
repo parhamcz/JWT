@@ -121,8 +121,10 @@ class AuthController extends Controller
     public function refreshAccessToken()
     {
         try {
+
             $tokens = Auth::guard('api')->refreshAccessToken()->tokens;
             if ($tokens) {
+
                 $user = Auth::guard('api')->user();
                 return $this->generateResponse(
                     message: "User's Token Renewed successfully.",
