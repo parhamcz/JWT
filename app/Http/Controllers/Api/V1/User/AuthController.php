@@ -102,12 +102,12 @@ class AuthController extends Controller
                         message: "User Logged Out Successfully."
                     );
                 }
-                return $this->generateResponse(
-                    message: "User Token Not Found.",
-                    success: false,
-                    status_code: 400
-                );
             }
+            return $this->generateResponse(
+                message: "User Token Not Found.",
+                success: false,
+                status_code: 400
+            );
         } catch (\Exception $e) {
             return $this->generateResponse(
                 message: "Error in logging out the user. Error: " . $e->getMessage(),
@@ -121,10 +121,8 @@ class AuthController extends Controller
     public function refreshAccessToken()
     {
         try {
-
             $tokens = Auth::guard('api')->refreshAccessToken()->tokens;
             if ($tokens) {
-
                 $user = Auth::guard('api')->user();
                 return $this->generateResponse(
                     message: "User's Token Renewed successfully.",

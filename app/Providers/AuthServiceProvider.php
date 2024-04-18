@@ -4,6 +4,7 @@ namespace App\Providers;
 
 // use Illuminate\Support\Facades\Gate;
 use App\Services\AuthGuards\JWTGuard;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Auth;
 
@@ -25,11 +26,12 @@ class AuthServiceProvider extends ServiceProvider
     {
         //
         Auth::extend('jwt', function ($app, $name, array $config) {
-            $accessTokenEncrypter = $app->make('encrypter');
+            $accessTokenEncrypter = new Encrypter(config('jwt.private_key'), 'aes-256-cbc');
+            $refreshTokenEncrypter = new Encrypter(config('jwt.refresh_private_key'), 'aes-256-cbc');
             return new JWTGuard(
                 Auth::createUserProvider($config['provider']),
                 $accessTokenEncrypter,
-                $accessTokenEncrypter,  // Use the same encrypter for refresh tokens (optional)
+                $refreshTokenEncrypter,  // Use the same encrypter for refresh tokens (optional)
                 $app->make('request')
             );
         });

@@ -36,40 +36,23 @@ class JWTGuard implements Guard
     }
 
     /**
-     * @throws JWTException
      */
     public function user(): ?User
     {
-        if ($this->user) {
-            return $this->user;
-        }
-
-        if ($token = $this->getToken()) {
-            try {
-                $this->user = $this->retrieveUserByToken($token);
-            } catch (JWTException $e) {
-                throw new JWTException("User could not be found.");
-            }
-        }
-
         return $this->user;
     }
 
 
-    public function refreshAccessToken(): static
+    public function refreshAccessToken()//: static
     {
-
         try {
             $this->validateRefreshToken();
-            dd('awd');
             $this->revokeAccessToken($this->user);
             $this->createToken($this->user, 'Refreshed Access Token');
-
-
         } catch (JWTException $e) {
-            // Handle refresh token validation errors
+            return $e->getMessage();
+//            throw new JWTException($e->getMessage());
         }
-
         return $this;
     }
 
@@ -109,7 +92,12 @@ class JWTGuard implements Guard
             'revoked' => null,
         ]);
 
-        $payload = $this->buildPayload($user->id, 'access_token', $uuid, Carbon::parse(time() + config('jwt.expiration')));
+        $payload = $this->buildPayload(
+            sub: $user->id,
+            type: 'access_token',
+            sig: $uuid,
+            exp: Carbon::parse(time() + config('jwt.expiration'))
+        );
         $this->tokens['access_token'] = $this->accessTokenEncrypter->encrypt($payload);
         $this->user = $user;
         $this->createRefreshToken($user);
@@ -119,14 +107,18 @@ class JWTGuard implements Guard
 
     protected function createRefreshToken(User $user): void
     {
-
-        $refreshToken = RefreshToken::firstOrCreate([
+        $uuid = Str::uuid();
+        $refreshToken = RefreshToken::create([
             'user_id' => $user->id,
             'revoked' => null,
-        ], ['uuid' => Str::uuid()]);
-        $refreshToken->refresh();
-
-        $payload = $this->buildPayload($user->id, 'refresh_token', $refreshToken->uuid, Carbon::parse(time() + config('jwt.refresh_token_expiration')));
+            'uuid' => $uuid,
+        ]);
+        $payload = $this->buildPayload(
+            sub: $user->id,
+            type: 'refresh_token',
+            sig: $uuid,
+            exp: Carbon::parse(time() + config('jwt.refresh_token_expiration'))
+        );
 
         $this->tokens['refresh_token'] = $this->refreshTokenEncrypter->encrypt($payload);
     }
@@ -153,10 +145,11 @@ class JWTGuard implements Guard
     /**
      * @throws JWTException
      */
-    protected function validateRefreshToken(): void
+    protected function validateRefreshToken()//: void
     {
+
         $data = $this->refreshTokenDecrypt($this->getToken());
-        if(!$this->validateTokenData($data, 'refresh_token')){
+        if (!$this->validateTokenData($data, 'refresh_token')) {
             throw new JWTException("Invalid 'refresh_token' token");
         }
     }
@@ -165,10 +158,11 @@ class JWTGuard implements Guard
      */
     protected function validateTokenData(array $data, string $type): bool
     {
+        $model = $type == 'refresh_token' ? RefreshToken::query() : JWT::query();
         if (
             !isset($data['sub'])
             || $data['type'] !== $type
-            || !JWT::whereUuid($data['sig'])->whereRevoked(null)->exists()
+            || (!$model->whereUuid($data['sig'])->whereRevoked(null)->exists())
             || Carbon::parse($data['exp']) <= now()
         ) {
             return false;
@@ -176,7 +170,7 @@ class JWTGuard implements Guard
         return true;
     }
 
-    protected function revoke(User $user): bool
+    public function revoke(User $user): bool
     {
         return $this->revokeAccessToken($user) && $this->revokeRefreshToken($user);
     }
@@ -187,8 +181,9 @@ class JWTGuard implements Guard
         if ($accessToken) {
             $accessToken->revoked = 1;
             $accessToken->save();
+            return true;
         }
-        return true; // Assuming success even if no token found
+        return false;
     }
 
     protected function revokeRefreshToken(User $user): bool
@@ -197,8 +192,9 @@ class JWTGuard implements Guard
         if ($refreshToken) {
             $refreshToken->revoked = 1;
             $refreshToken->save();
+            return true;
         }
-        return true; // Assuming success even if no token found
+        return false;
     }
 
     protected function revokeExistingTokens(User $user): void
@@ -225,12 +221,33 @@ class JWTGuard implements Guard
     /**
      * @throws JWTException
      */
-    protected function retrieveUserByToken(string $token): User
+    protected function retrieveUserByToken(string $token): ?User
+    {
+        return $this->retrieveUserByAccessToken($token) ?? $this->retrieveUserByRefreshToken($token);
+    }
+
+    /**
+     * @throws JWTException
+     */
+    protected function retrieveUserByAccessToken(string $token): ?User
     {
         $data = $this->accessTokenDecrypt($token);
-        $this->validateTokenData($data, 'access_token');
+        if ($this->validateTokenData($data, 'access_token')) {
+            return User::where('id', $data['sub'])->firstOrFail();
+        }
+        return null;
+    }
 
-        return User::where('id', $data['sub'])->firstOrFail();
+    /**
+     * @throws JWTException
+     */
+    protected function retrieveUserByRefreshToken(string $token): ?User
+    {
+        $data = $this->refreshTokenDecrypt($token);
+        if ($this->validateTokenData($data, 'refresh_token')) {
+            return User::where('id', $data['sub'])->firstOrFail();
+        }
+        return null;
     }
 
     protected function buildPayload(int $sub, string $type, string $sig, Carbon $exp): array
@@ -258,30 +275,40 @@ class JWTGuard implements Guard
 
     protected function initializeRefreshToken(): void
     {
-        // You can implement logic to handle refresh tokens during login or user retrieval
-    }
-
-    /**
-     * @throws JWTException
-     */
-    protected function accessTokenDecrypt(string $token): array
-    {
-        try {
-            return $this->accessTokenEncrypter->decrypt($token);
-        } catch (DecryptException $e) {
-            throw new JWTException('Invalid access token');
+        $token = $this->getToken();
+        if ($token) {
+            try {
+                $this->user = $this->retrieveUserByToken($token);
+                $this->tokens['refresh_token'] = $token;
+            } catch (JWTException $e) {
+                $this->forgetUser();
+            }
         }
     }
 
     /**
      * @throws JWTException
      */
-    protected function refreshTokenDecrypt(string $token): array
+    protected function accessTokenDecrypt(string $token): ?array
+    {
+        try {
+            return $this->accessTokenEncrypter->decrypt($token);
+        } catch (DecryptException $e) {
+            return [];
+//            throw new JWTException('Invalid access token');
+        }
+    }
+
+    /**
+     * @throws JWTException
+     */
+    protected function refreshTokenDecrypt(string $token): ?array
     {
         try {
             return $this->refreshTokenEncrypter->decrypt($token);
         } catch (DecryptException $e) {
-            throw new JWTException('Invalid refresh token');
+            return [];
+//            throw new JWTException('Invalid refresh token');
         }
     }
 
